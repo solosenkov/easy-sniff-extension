@@ -1,0 +1,8 @@
+{
+  "description": {
+    "message": "QA workspace: API client, HTTP and WebSocket capture, decoders and overrides."
+  },
+  "open": {
+    "message": "Open Easy Sniff"
+  }
+}

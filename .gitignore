@@ -1,0 +1,13 @@
+node_modules/
+dist/
+output/
+docs/
+tests/
+scripts/fixture.mjs
+.playwright-cli/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
