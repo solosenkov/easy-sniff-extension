@@ -1,0 +1,139 @@
+{
+  "id": "demo-report",
+  "title": "Demo report · fictional data",
+  "tabUrl": "http://127.0.0.1:4318/",
+  "startedAt": 1790769600000,
+  "endedAt": 1790769606500,
+  "status": "saved",
+  "fullHttp": true,
+  "networkCount": 2,
+  "events": [
+    {
+      "id": "1",
+      "at": 700,
+      "kind": "request",
+      "severity": "normal",
+      "title": "GET http://127.0.0.1:4318/api/items",
+      "detail": "Fetch",
+      "exchangeId": "demo-items"
+    },
+    {
+      "id": "2",
+      "at": 706,
+      "kind": "response",
+      "severity": "error",
+      "title": "500 http://127.0.0.1:4318/api/items",
+      "detail": "Fetch",
+      "exchangeId": "demo-items"
+    },
+    {
+      "id": "3",
+      "at": 710,
+      "kind": "console",
+      "severity": "error",
+      "title": "error: Demo save failed 500"
+    },
+    {
+      "id": "4",
+      "at": 2400,
+      "kind": "websocket",
+      "severity": "normal",
+      "title": "→ ws://127.0.0.1:4318/events",
+      "detail": "opcode 1, 99 chars"
+    },
+    {
+      "id": "5",
+      "at": 2420,
+      "kind": "websocket",
+      "severity": "normal",
+      "title": "← ws://127.0.0.1:4318/events",
+      "detail": "opcode 1, 99 chars"
+    },
+    {
+      "id": "6",
+      "at": 4400,
+      "kind": "request",
+      "severity": "normal",
+      "title": "POST http://127.0.0.1:4318/api/save",
+      "detail": "Fetch",
+      "exchangeId": "demo-save"
+    },
+    {
+      "id": "7",
+      "at": 4402,
+      "kind": "response",
+      "severity": "error",
+      "title": "500 http://127.0.0.1:4318/api/save",
+      "detail": "Fetch",
+      "exchangeId": "demo-save"
+    },
+    {
+      "id": "8",
+      "at": 4410,
+      "kind": "console",
+      "severity": "error",
+      "title": "error: Demo save failed 500"
+    },
+    {
+      "id": "9",
+      "at": 5000,
+      "kind": "marker",
+      "severity": "warning",
+      "title": "Bug appeared"
+    }
+  ],
+  "network": [
+    {
+      "id": "demo-items",
+      "requestId": "1",
+      "url": "http://127.0.0.1:4318/api/items",
+      "method": "GET",
+      "resourceType": "Fetch",
+      "startedAt": 1790769600700,
+      "requestHeaders": {
+        "Accept": "application/json"
+      },
+      "status": 500,
+      "statusText": "Internal Server Error",
+      "responseHeaders": {
+        "Content-Type": "application/json"
+      },
+      "responseBody": {
+        "content": "{\"message\":\"Internal Server Error\"}",
+        "base64": false
+      },
+      "duration": 6,
+      "protocol": "http/1.1",
+      "remoteAddress": "127.0.0.1:4318",
+      "curl": "curl -X 'GET' 'http://127.0.0.1:4318/api/items' \\\n  -H 'Accept: application/json'"
+    },
+    {
+      "id": "demo-save",
+      "requestId": "2",
+      "url": "http://127.0.0.1:4318/api/save",
+      "method": "POST",
+      "resourceType": "Fetch",
+      "startedAt": 1790769604400,
+      "requestHeaders": {
+        "Content-Type": "application/json"
+      },
+      "requestBody": {
+        "content": "{\"title\":\"Release checklist\",\"completed\":true}",
+        "base64": false
+      },
+      "status": 500,
+      "statusText": "Internal Server Error",
+      "responseHeaders": {
+        "Content-Type": "application/json"
+      },
+      "responseBody": {
+        "content": "{\"error\":\"Demo save failed\",\"code\":\"DEMO_ERROR\"}",
+        "base64": false
+      },
+      "duration": 2,
+      "protocol": "http/1.1",
+      "remoteAddress": "127.0.0.1:4318",
+      "curl": "curl -X 'POST' 'http://127.0.0.1:4318/api/save' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\"title\":\"Release checklist\",\"completed\":true}'"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "id": "demo-request",
+    "requestId": "demo-1",
+    "url": "https://example.test/api/items",
+    "method": "GET",
+    "type": "Fetch",
+    "start": 0,
+    "status": 200,
+    "duration": 85,
+    "requestHeaders": { "Accept": "application/json" },
+    "responseHeaders": { "Content-Type": "application/json" },
+    "responseBody": "{\"items\":[{\"id\":1,\"title\":\"Release checklist\"}]}"
+  }
+]

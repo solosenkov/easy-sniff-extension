@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a reproducible Easy Sniff problem
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please use a local or public demo and remove credentials and private data from attachments. Full HTTP recordings may contain tokens and cookies.
+  - type: input
+    id: version
+    attributes:
+      label: Easy Sniff version
+      placeholder: 3.7.0
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and operating system
+      placeholder: Chrome version, operating system
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal example using fake data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include relevant sanitized errors or screenshots.
+    validations:
+      required: true

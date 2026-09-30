@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest an improvement to a QA workflow
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What testing task are you trying to do?
+      description: A concrete scenario is more useful than a feature name.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Current workaround or alternatives
