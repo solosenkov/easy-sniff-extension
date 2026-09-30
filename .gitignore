@@ -5,6 +5,16 @@ docs/
 tests/
 scripts/fixture.mjs
 .playwright-cli/
+.playwright/
+.auth/
+.aws/
+.idea/
+.vscode/
+*.code-workspace
+*.local.json
+*.private.json
+*.pem
+*.key
 *.tsbuildinfo
 .DS_Store
 .env
