@@ -27,16 +27,16 @@ Then load the `dist` folder via **Load unpacked**. `npm run dev` serves a browse
 - WebSocket view showing captured connections, status, URL topics, message counts, and incoming/outgoing frames. Its scenario panel can send text through the page's socket, inject a synthetic incoming message into the app, and save rules that replace future incoming text messages. Start capture before the connection opens and reload the test tab. Worker sockets and already-open sockets are not controllable. URL topics are shown when present; hidden subscriptions require reading captured frames.
 - Response mocks (including HTTP 500), request changes, header changes, blocking, and delay. Select a request in Network and click **Modify** to prepare a rule from it. Rules affect future traffic on the connected tab only. A mock returns a synthetic response before the request reaches the server.
 - JSON, JWT, Base64, URL, and WebSocket payload decoding.
+- Bug Replay records one tab as WebM alongside a synchronized timeline of console messages, HTTP requests and responses, WebSocket metadata, errors, and QA markers. Review it locally, then export a ZIP with `report.html`, `video.webm`, and `session.json`. This feature is available in the v3.6.0 source build; the linked v3.5.0 release predates it.
 - English interface by default, with a persistent **RU** language switch in the top bar.
-- Time Machine scenario packs: export complete captured text responses and WebSocket frames to a versioned JSON file, import a teammate's file, replay recorded HTTP responses in order per URL/method, and manually play incoming WS frames through the page's open socket.
 
 Chrome displays a debugger notice while capture is active. Opening DevTools may disconnect the capture. Stopping capture also stops applying overrides to the page. The journal stores up to 300 requests and 300 WebSocket messages within a size budget; large or binary bodies may be truncated or unavailable. Starting capture on another tab resets the journal.
 
-## Time Machine
+## Bug Replay
 
-Capture a tab, reproduce the flow, then open **Time Machine** and create a pack from the current session. Download its `.easysniff.json` file to share it. A teammate can import that file, start capture on their own test tab, then click **Start replay**. Repeat the application actions: recorded HTTP URLs and methods receive the saved responses in their original per-endpoint order, with recorded delays. Click **Play WS frames** after the page has opened its WebSocket connection to inject recorded incoming text frames in order. Stop replay when done.
+Open the page to record and click the Easy Sniff extension icon on that tab. In the tool window, open **Bug Replay**, confirm the tab, and click **Start recording**. Chrome grants tab capture to the tab where you invoked the extension. Reproduce the bug and click **Bug appeared** to mark the moment; then click **Stop**. The recording has a five-minute limit and also stops when the tab closes. Select the saved session to review its video and timeline. Red markers indicate console errors, uncaught exceptions, failed requests, and HTTP 4xx/5xx responses. Click a marker or event to jump to that point. **Download ZIP** produces an offline report for a developer: unzip it, then open `report.html` beside `video.webm`.
 
-Packs include only complete text responses and text WS frames. Enabled rules are included for reference and are not applied on import. The file can contain application data, so inspect it before sharing. Replay only intercepts recorded HTTP URLs; other requests still reach the network. Navigation, clicks, binary resources, and fully offline replay are outside this first version.
+Recordings stay in this browser's IndexedDB until deleted. The export omits request/response bodies and headers. It strips common secret query parameters from URLs and common keys from console text, but the video itself may show sensitive data. Review it before sharing. Opening DevTools on the recorded tab can disconnect Easy Sniff's debugger; video may continue briefly, but technical events stop and the recording is finalized. Bug Replay documents what happened; it does not replay user actions or network traffic.
 
 ## AI assistant (beta)
 
@@ -56,7 +56,6 @@ Requests to the model go directly from your browser to the chosen provider. Comm
 - WebSocket topic discovery reads URL query parameters; it cannot infer server-side subscriptions it has not seen. WS scenarios operate on text messages opened in the page context after capture starts; synthetic and replaced events are local to the app, and the network journal keeps raw server frames. Compressed or encoded app protocols require payloads in the same format.
 - JWT decoding does not verify the signature.
 - Collections, history, environments, and provider settings are stored on this device and may contain tokens.
-- Scenario replay intercepts recorded HTTP URLs and methods only. Other requests still go to the network; this is not a fully offline page recording. Clicks and navigation are not recorded. Review exported packs before sharing because response bodies may contain private data.
 
 ## Development
 

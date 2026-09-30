@@ -579,46 +579,41 @@ Object.assign(english, {
   "Кадр обрезан до 8000 символов; использовать его как готовое сообщение нельзя.":
     "Frame truncated to 8,000 characters; it cannot be reused as a complete message.",
   имитация: "synthetic",
-  "ВОСПРОИЗВОДИМЫЙ КЕЙС": "REPRODUCIBLE CASE",
-  "Запишите ответы в файл и передайте коллеге тот же сценарий.":
-    "Record responses to a file and share the same scenario with a teammate.",
-  "Воспроизведение идёт": "Replay active",
-  Ожидание: "Idle",
-  "Порядок работы": "Workflow",
-  "Захватите трафик": "Capture traffic",
-  "Создайте или откройте пакет": "Create or open a pack",
-  "Запустите воспроизведение": "Start replay",
-  ИСТОЧНИК: "SOURCE",
-  "Текущая сессия": "Current session",
-  "Нет подключённой вкладки": "No connected tab",
-  "Имя пакета": "Pack name",
-  "Например: ошибка после комментария": "For example: error after comment",
-  "Создать пакет": "Create pack",
-  "Открыть сетевой журнал": "Open network log",
-  "В пакет входят только полные текстовые ответы и текстовые WS-кадры. Секреты и персональные данные в ответах могут сохраниться — проверьте файл перед передачей.":
-    "The pack includes only complete text responses and text WS frames. Responses may contain secrets or personal data; review the file before sharing.",
-  ПАКЕТ: "PACK",
-  "Пакет не выбран": "No pack selected",
-  "Создайте пакет из записи или импортируйте файл коллеги.":
-    "Create a pack from a capture or import a teammate's file.",
-  Правил: "Rules",
-  Импортировать: "Import",
-  "Скачать пакет": "Download pack",
-  "И ещё {0} HTTP-запросов": "And {0} more HTTP requests",
-  ВОСПРОИЗВЕДЕНИЕ: "REPLAY",
-  "Готово к запуску": "Ready to start",
-  "HTTP: {0}/{1} ответов выдано": "HTTP: {0}/{1} responses served",
-  "Показать WS-кадры": "Play WS frames",
-  "Начать воспроизведение": "Start replay",
-  "HTTP-пакет подменяет только записанные URL и методы; остальные запросы идут в сеть. Для WS откройте соединение на тестовой странице и запустите кадры отдельно. Сохранённые правила включены в пакет как справка, но не применяются. Клики и переходы пока не записываются.":
-    "Only recorded URLs and methods are replayed; other requests still use the network. Open the WS connection on the test page, then play frames separately. Saved rules are included for reference but are not applied. Clicks and navigation are not recorded yet.",
-  "HTTP-воспроизведение запущено. Повторите действия на тестовой странице.":
-    "HTTP replay started. Repeat the actions on the test page.",
-  "Воспроизведение остановлено.": "Replay stopped.",
-  "Запланировано WS-сообщений: {0}": "Scheduled WS frames: {0}",
-  "Файл сценария больше 3 МБ.": "Scenario file exceeds 3 MB.",
-  "Сценарий импортирован. Проверьте данные перед запуском.":
-    "Scenario imported. Review its data before replay.",
-  "Пакет собран. Проверьте состав и скачайте файл.":
-    "Pack created. Review its contents and download the file.",
+  "Запись бага": "Bug replay",
+  "Видео вкладки, консоль и сеть — на одной временной шкале.":
+    "Tab video, console and network on one timeline.",
+  "Только на этом устройстве": "Stored on this device",
+  "Вкладка для записи": "Tab to record",
+  "Выберите страницу, затем воспроизведите баг.":
+    "Choose a page, then reproduce the bug.",
+  "На выбранной вкладке нажмите иконку Easy Sniff, затем вернитесь сюда и начните запись.":
+    "Click the Easy Sniff icon on the selected tab, then return here to start recording.",
+  "Начать запись": "Start recording",
+  Остановить: "Stop",
+  "Событий: {0}": "Events: {0}",
+  "Ошибок: {0}": "Errors: {0}",
+  "Баг проявился": "Bug appeared",
+  "Запись экрана может содержать личные данные. Просмотрите видео перед отправкой.":
+    "The video may contain personal data. Review it before sharing.",
+  "Один файл вместо переписки о баге": "One file instead of a long bug thread",
+  "Запишите воспроизведение, отметьте момент ошибки и скачайте ZIP. Разработчик откроет report.html рядом с видео и логами.":
+    "Record the reproduction, mark the failure, and download a ZIP. The developer opens report.html next to the video and logs.",
+  Записи: "Recordings",
+  событий: "events",
+  "Записей пока нет. Они появятся здесь после остановки.":
+    "No recordings yet. They appear here after you stop.",
+  "Скачать ZIP": "Download ZIP",
+  "Удалить эту запись с устройства?": "Delete this recording from this device?",
+  "Временная шкала": "Timeline",
+  Все: "All",
+  Ошибки: "Errors",
+  Сеть: "Network",
+  Консоль: "Console",
+  Метки: "Markers",
+  "Для этого фильтра событий нет.": "No events match this filter.",
+  "Отчёт включает видео и URL запросов. Секретные query-параметры скрываются автоматически, но проверьте экран перед отправкой.":
+    "The report includes video and request URLs. Secret query parameters are redacted, but review the screen before sharing.",
+  "Выберите запись для просмотра": "Select a recording to review",
+  "Здесь появятся видео, события и отметки ошибок.":
+    "Video, events, and error markers appear here.",
 });

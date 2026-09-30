@@ -32,10 +32,10 @@ import {
   Globe,
   MagnifyingGlass,
   Plus,
-  Stack,
   SlidersHorizontal,
   TerminalWindow,
   Trash,
+  VideoCamera,
   X,
 } from "@phosphor-icons/react";
 import { ApiClient } from "./components/ApiClient";
@@ -82,9 +82,9 @@ const Tools = lazy(() =>
 const Rules = lazy(() =>
   import("./components/Rules").then((m) => ({ default: m.Rules })),
 );
-const ScenarioPacks = lazy(() =>
-  import("./components/ScenarioPacks").then((m) => ({
-    default: m.ScenarioPacks,
+const BugRecording = lazy(() =>
+  import("./components/BugRecording").then((m) => ({
+    default: m.BugRecording,
   })),
 );
 
@@ -127,7 +127,7 @@ export default function App() {
     { id: "ws", label: "WebSocket", icon: Broadcast },
     { id: "tools", label: t("Декодеры"), icon: BracketsCurly },
     { id: "rules", label: t("Подмены"), icon: SlidersHorizontal },
-    { id: "scenarios", label: "Time Machine", icon: Stack },
+    { id: "recording", label: t("Запись бага"), icon: VideoCamera },
   ];
   const [aiMounted, setAiMounted] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -680,11 +680,8 @@ export default function App() {
                 connected={capture.tabId !== null}
                 onCapture={() => setSection("network")}
               />
-            ) : section === "scenarios" ? (
-              <ScenarioPacks
-                capture={capture}
-                onCapture={() => setSection("network")}
-              />
+            ) : section === "recording" ? (
+              <BugRecording capture={capture} onCapture={setCapture} />
             ) : (
               <Capture
                 key={section}

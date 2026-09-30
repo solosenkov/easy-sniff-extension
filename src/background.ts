@@ -11,37 +11,34 @@ import { decodeBase64, encodeBase64 } from "./lib/decoders";
 import { limitRequests } from "./lib/network";
 import { installWsBridge } from "./lib/ws-bridge";
 import {
-  nextScenarioResponse,
-  parseScenarioPack,
-  type ScenarioPack,
-} from "./lib/scenario-pack";
+  redactText,
+  redactUrl,
+  saveSession,
+  type RecordingEvent,
+  type RecordingSession,
+} from "./lib/recording";
 let state: CaptureState = initialCapture();
+let recording: RecordingSession | null = null;
+let lastInvokedTabId: number | null = null;
+let recordingTimer: ReturnType<typeof setTimeout> | undefined;
 let wsScriptId = "";
-type ScenarioReplay = {
-  pack: ScenarioPack;
-  consumed: Record<string, number>;
-  startedAt: number;
-  scheduledWs: number;
-};
-let replay: ScenarioReplay | null = null;
-const ready = chrome.storage.session
-  .get(["capture", "scenarioReplay"])
-  .then(async (data) => {
-    await chrome.storage.local.setAccessLevel({
-      accessLevel: "TRUSTED_CONTEXTS",
-    });
-    await initLanguage();
-    if (data.capture)
-      state = { ...initialCapture(), ...data.capture } as CaptureState;
-    if (data.scenarioReplay) {
-      const savedReplay = data.scenarioReplay as ScenarioReplay;
-      replay = { ...savedReplay, pack: parseScenarioPack(savedReplay.pack) };
-    }
-    if (state.error?.startsWith("WebSocket:")) state.error = "";
-    const saved = await chrome.storage.local.get(["rules", "wsRules"]);
-    if (saved.rules) state.rules = saved.rules as Rule[];
-    if (saved.wsRules) state.wsRules = saved.wsRules as WsRule[];
+const ready = chrome.storage.session.get("capture").then(async (data) => {
+  await chrome.storage.local.setAccessLevel({
+    accessLevel: "TRUSTED_CONTEXTS",
   });
+  await initLanguage();
+  if (data.capture)
+    state = { ...initialCapture(), ...data.capture } as CaptureState;
+  if (state.error?.startsWith("WebSocket:")) state.error = "";
+  const saved = await chrome.storage.local.get(["rules", "wsRules"]);
+  if (saved.rules) state.rules = saved.rules as Rule[];
+  if (saved.wsRules) state.wsRules = saved.wsRules as WsRule[];
+  const active = await chrome.storage.session.get("recording");
+  if (active.recording) recording = active.recording as RecordingSession;
+  const invocation = await chrome.storage.session.get("lastInvokedTabId");
+  if (typeof invocation.lastInvokedTabId === "number")
+    lastInvokedTabId = invocation.lastInvokedTabId;
+});
 function trimBuffer() {
   // Leave room for Chrome's UTF-16 storage accounting and rule configuration.
   state.requests = limitRequests(state.requests);
@@ -134,7 +131,15 @@ function matchesWsPattern(pattern: string, url: string) {
     .replaceAll("*", ".*");
   return new RegExp(`^${escaped}$`).test(url);
 }
-chrome.action.onClicked.addListener(async () => {
+chrome.action.onClicked.addListener(async (tab) => {
+  await ready;
+  if (typeof tab.id === "number" && /^https?:/.test(tab.url || "")) {
+    lastInvokedTabId = tab.id;
+    await chrome.storage.session.set({ lastInvokedTabId });
+    void chrome.runtime
+      .sendMessage({ type: "recording.target", tabId: tab.id })
+      .catch(() => {});
+  }
   const { toolWindowId } = await chrome.storage.session.get("toolWindowId");
   if (typeof toolWindowId === "number") {
     try {
@@ -152,13 +157,198 @@ chrome.action.onClicked.addListener(async () => {
   });
   await chrome.storage.session.set({ toolWindowId: win?.id });
 });
+function recordingEvent(
+  kind: RecordingEvent["kind"],
+  severity: RecordingEvent["severity"],
+  title: string,
+  detail = "",
+  extra: Partial<RecordingEvent> = {},
+) {
+  if (!recording || recording.status !== "recording") return;
+  const event: RecordingEvent = {
+    id: crypto.randomUUID(),
+    at: Math.max(0, Date.now() - recording.startedAt),
+    kind,
+    severity,
+    title: redactText(title).slice(0, 300),
+    detail: redactText(detail).slice(0, 500),
+    ...extra,
+  };
+  recording.events.push(event);
+  if (recording.events.length > 2000) recording.events.shift();
+  if (!recordingTimer)
+    recordingTimer = setTimeout(() => {
+      recordingTimer = undefined;
+      void chrome.storage.session.set({ recording }).catch(() => {});
+      void chrome.runtime
+        .sendMessage({ type: "recording.updated", recording })
+        .catch(() => {});
+    }, 300);
+}
+function recordDebuggerEvent(method: string, p: any) {
+  if (!recording || recording.status !== "recording") return;
+  if (method === "Network.requestWillBeSent") {
+    recordingEvent(
+      "request",
+      "normal",
+      `${p.request.method} ${redactUrl(p.request.url)}`,
+      p.type || "",
+      { requestId: p.requestId },
+    );
+  } else if (method === "Network.responseReceived") {
+    const severity = p.response.status >= 400 ? "error" : "normal";
+    recordingEvent(
+      "response",
+      severity,
+      `${p.response.status} ${redactUrl(p.response.url)}`,
+      p.type || "",
+      { requestId: p.requestId, status: p.response.status },
+    );
+  } else if (method === "Network.loadingFailed") {
+    recordingEvent(
+      "network-error",
+      "error",
+      redactUrl(
+        state.requests.find((r) => r.requestId === p.requestId)?.url ||
+          "Network request failed",
+      ),
+      p.errorText || "",
+      { requestId: p.requestId },
+    );
+  } else if (method === "Network.loadingFinished") {
+    const row = state.requests.find((r) => r.requestId === p.requestId);
+    const duration = row?.start
+      ? Math.round((p.timestamp - row.start) * 1000)
+      : 0;
+    if (duration >= 1500)
+      recordingEvent(
+        "response",
+        "warning",
+        `Slow request · ${duration} ms`,
+        redactUrl(row?.url || ""),
+        { requestId: p.requestId, duration },
+      );
+  } else if (method === "Runtime.consoleAPICalled") {
+    const level = String(p.type || "log");
+    const details = (p.args || [])
+      .map((arg: any) =>
+        String(
+          arg.value ?? arg.description ?? arg.preview?.description ?? arg.type,
+        ),
+      )
+      .join(" ");
+    const severity =
+      level === "error" || level === "assert"
+        ? "error"
+        : level === "warning"
+          ? "warning"
+          : "normal";
+    recordingEvent(
+      "console",
+      severity,
+      `${level}: ${details || "(empty)"}`,
+      p.stackTrace?.callFrames?.[0]
+        ? `${p.stackTrace.callFrames[0].url}:${p.stackTrace.callFrames[0].lineNumber + 1}`
+        : "",
+    );
+  } else if (method === "Runtime.exceptionThrown") {
+    recordingEvent(
+      "exception",
+      "error",
+      p.exceptionDetails?.text || "Uncaught exception",
+      p.exceptionDetails?.exception?.description || "",
+    );
+  } else if (method === "Log.entryAdded") {
+    const entry = p.entry;
+    if (entry?.source === "javascript" && entry?.level === "error")
+      recordingEvent(
+        "console",
+        "error",
+        entry.text || "JavaScript error",
+        entry.url || "",
+      );
+  } else if (
+    method === "Network.webSocketFrameReceived" ||
+    method === "Network.webSocketFrameSent"
+  ) {
+    const row = state.requests.find((r) => r.requestId === p.requestId);
+    recordingEvent(
+      "websocket",
+      "normal",
+      `${method.endsWith("Sent") ? "→" : "←"} ${redactUrl(row?.url || "WebSocket frame")}`,
+      `opcode ${p.response?.opcode ?? "?"}, ${p.response?.payloadData?.length ?? 0} chars`,
+      { requestId: p.requestId },
+    );
+  }
+}
+async function ensureOffscreen() {
+  const url = chrome.runtime.getURL("offscreen.html");
+  if (
+    !(
+      await chrome.runtime.getContexts({
+        contextTypes: ["OFFSCREEN_DOCUMENT"],
+        documentUrls: [url],
+      })
+    ).length
+  ) {
+    await chrome.offscreen.createDocument({
+      url: "offscreen.html",
+      reasons: [chrome.offscreen.Reason.USER_MEDIA],
+      justification:
+        "Record the user-selected browser tab for a local bug report",
+    });
+  }
+}
+async function mediaMessage<T>(
+  type: string,
+  data: Record<string, unknown> = {},
+): Promise<T> {
+  const response = await chrome.runtime.sendMessage({ type, ...data });
+  if (!response?.ok)
+    throw new Error(response?.error || "Recorder did not respond");
+  return response.data as T;
+}
+async function stopRecording() {
+  if (!recording || recording.status !== "recording") return recording;
+  if (recordingTimer) {
+    clearTimeout(recordingTimer);
+    recordingTimer = undefined;
+  }
+  recording.status = "stopping";
+  await chrome.storage.session.set({ recording });
+  try {
+    const result = await mediaMessage<{ size: number; mimeType: string }>(
+      "recording.media.stop",
+    );
+    await finalizeRecording(result);
+  } catch (error) {
+    recording.status = "failed";
+    recording.error = String(error);
+  }
+  await chrome.storage.session.set({ recording });
+  void chrome.runtime
+    .sendMessage({ type: "recording.updated", recording })
+    .catch(() => {});
+  return recording;
+}
+async function finalizeRecording(result: { size: number; mimeType: string }) {
+  if (!recording) return;
+  if (state.tabId !== null) {
+    await Promise.allSettled([
+      command(state.tabId, "Runtime.disable"),
+      command(state.tabId, "Log.disable"),
+    ]);
+  }
+  recording.endedAt = Date.now();
+  recording.size = result.size;
+  recording.mimeType = result.mimeType;
+  recording.status = "saved";
+  await saveSession(recording);
+}
 async function updateInterception() {
   if (state.tabId === null) return;
   const active = state.rules.filter((r) => r.enabled);
-  const patterns = [
-    ...active.map((r) => r.pattern),
-    ...(replay?.pack.http.map((entry) => entry.url) || []),
-  ];
+  const patterns = active.map((r) => r.pattern);
   if (patterns.length)
     await command(state.tabId, "Fetch.enable", {
       patterns: [...new Set(patterns)].map((urlPattern) => ({
@@ -170,64 +360,6 @@ async function updateInterception() {
 }
 async function paused(tabId: number, p: any) {
   try {
-    if (replay) {
-      const activeReplay = replay;
-      const { known, entry } = nextScenarioResponse(
-        activeReplay.pack,
-        activeReplay.consumed,
-        p.request.url,
-        p.request.method,
-      );
-      if (known) {
-        if (!entry) {
-          await command(tabId, "Fetch.failRequest", {
-            requestId: p.requestId,
-            errorReason: "BlockedByClient",
-          });
-          return;
-        }
-        await chrome.storage.session.set({ scenarioReplay: activeReplay });
-        if (entry.delayMs)
-          await new Promise((resolve) => setTimeout(resolve, entry.delayMs));
-        if (replay !== activeReplay) {
-          await command(tabId, "Fetch.continueRequest", {
-            requestId: p.requestId,
-          });
-          return;
-        }
-        const responseHeaders = Object.entries(entry.responseHeaders).map(
-          ([name, value]) => ({ name, value }),
-        );
-        if (
-          !responseHeaders.some((h) => h.name.toLowerCase() === "content-type")
-        )
-          responseHeaders.push({
-            name: "Content-Type",
-            value: "text/plain; charset=utf-8",
-          });
-        const origin = Object.entries(
-          p.request.headers as Record<string, string>,
-        ).find(([name]) => name.toLowerCase() === "origin")?.[1];
-        if (
-          origin &&
-          !responseHeaders.some(
-            (h) => h.name.toLowerCase() === "access-control-allow-origin",
-          )
-        ) {
-          responseHeaders.push(
-            { name: "Access-Control-Allow-Origin", value: origin },
-            { name: "Access-Control-Allow-Credentials", value: "true" },
-          );
-        }
-        await command(tabId, "Fetch.fulfillRequest", {
-          requestId: p.requestId,
-          responseCode: entry.status,
-          responseHeaders,
-          body: encodeBase64(entry.responseBody),
-        });
-        return;
-      }
-    }
     const rule = state.rules.find((r) =>
       matchesRule(r, p.request.url, p.request.method),
     );
@@ -457,8 +589,10 @@ async function networkEvent(tabId: number, method: string, p: any) {
 chrome.debugger.onEvent.addListener((source, method, params) => {
   void ready
     .then(() => {
-      if (source.tabId === state.tabId)
+      if (source.tabId === state.tabId) {
+        recordDebuggerEvent(method, params);
         return networkEvent(source.tabId!, method, params);
+      }
     })
     .catch((error) => {
       state.error = String(error);
@@ -468,8 +602,15 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 chrome.debugger.onDetach.addListener((source) => {
   void ready.then(() => {
     if (source.tabId === state.tabId) {
-      replay = null;
-      void chrome.storage.session.remove("scenarioReplay");
+      if (recording?.status === "recording") {
+        recordingEvent(
+          "system",
+          "warning",
+          "Debugger disconnected",
+          "Console and network capture stopped",
+        );
+        void stopRecording();
+      }
       wsScriptId = "";
       void chrome.scripting
         .executeScript({
@@ -487,14 +628,88 @@ chrome.debugger.onDetach.addListener((source) => {
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (
     sender.id !== chrome.runtime.id ||
-    !(
-      message.type?.startsWith("capture.") ||
-      message.type?.startsWith("scenario.")
-    )
+    (!message.type?.startsWith("capture.") &&
+      !message.type?.startsWith("recording.")) ||
+    (message.type?.startsWith("recording.media.") &&
+      message.type !== "recording.media.completed") ||
+    message.type === "recording.updated" ||
+    message.type === "recording.target"
   )
     return;
   void (async () => {
     await ready;
+    if (message.type === "recording.media.completed") {
+      if (
+        recording?.status === "recording" &&
+        message.result?.id === recording.id
+      ) {
+        if (recordingTimer) {
+          clearTimeout(recordingTimer);
+          recordingTimer = undefined;
+        }
+        recording.status = "stopping";
+        await finalizeRecording(message.result);
+        await chrome.storage.session.set({ recording });
+        void chrome.runtime
+          .sendMessage({ type: "recording.updated", recording })
+          .catch(() => {});
+      }
+      return recording;
+    }
+    if (message.type === "recording.status") return recording;
+    if (message.type === "recording.eligible") return lastInvokedTabId;
+    if (message.type === "recording.start") {
+      const tabId = Number(message.tabId);
+      if (tabId !== lastInvokedTabId)
+        throw new Error(
+          "Open the test tab and click the Easy Sniff icon before recording it",
+        );
+      if (recording?.status === "recording" || recording?.status === "stopping")
+        throw new Error("A bug recording is already running");
+      if (state.tabId !== tabId)
+        throw new Error("Connect the selected tab in Network before recording");
+      const tab = await chrome.tabs.get(tabId);
+      await ensureOffscreen();
+      const streamId = await chrome.tabCapture.getMediaStreamId({
+        targetTabId: tabId,
+      });
+      const next: RecordingSession = {
+        id: crypto.randomUUID(),
+        title: tab.title || "Bug recording",
+        tabUrl: redactUrl(tab.url || ""),
+        startedAt: Date.now(),
+        status: "recording",
+        events: [],
+      };
+      const media = await mediaMessage<{ mimeType: string }>(
+        "recording.media.start",
+        { id: next.id, streamId },
+      );
+      try {
+        await command(tabId, "Runtime.enable");
+        await command(tabId, "Log.enable");
+        recording = { ...next, mimeType: media.mimeType };
+        await chrome.storage.session.set({ recording });
+        void chrome.runtime
+          .sendMessage({ type: "recording.updated", recording })
+          .catch(() => {});
+        return recording;
+      } catch (error) {
+        await mediaMessage("recording.media.stop").catch(() => {});
+        throw error;
+      }
+    }
+    if (message.type === "recording.stop") return stopRecording();
+    if (message.type === "recording.marker") {
+      if (!recording || recording.status !== "recording")
+        throw new Error("No active recording");
+      recordingEvent(
+        "marker",
+        "warning",
+        String(message.label || "Bug appeared").slice(0, 120),
+      );
+      return recording;
+    }
     if (message.type === "capture.get") return state;
     if (message.type === "capture.tabs")
       return (await chrome.tabs.query({}))
@@ -503,13 +718,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (message.type === "capture.start") {
       const tabId = Number(message.tabId);
       if (state.tabId === tabId) return state;
-      replay = null;
-      await chrome.storage.session.remove("scenarioReplay");
       if (state.tabId !== null) {
-        await evaluateWs(
-          state.tabId,
-          "(globalThis.__easySniffScenarioTimers || []).forEach(clearTimeout); globalThis.__easySniffScenarioTimers = []",
-        ).catch(() => {});
         await stopWsBridge(state.tabId);
         await chrome.debugger.detach({ tabId: state.tabId }).catch(() => {});
       }
@@ -541,13 +750,8 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       }
     }
     if (message.type === "capture.stop" && state.tabId !== null) {
-      replay = null;
-      await chrome.storage.session.remove("scenarioReplay");
+      if (recording?.status === "recording") await stopRecording();
       const tabId = state.tabId;
-      await evaluateWs(
-        tabId,
-        "(globalThis.__easySniffScenarioTimers || []).forEach(clearTimeout); globalThis.__easySniffScenarioTimers = []",
-      ).catch(() => {});
       await stopWsBridge(tabId);
       state.tabId = null;
       await chrome.debugger.detach({ tabId }).catch(() => {});
@@ -555,117 +759,6 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (message.type === "capture.clear") {
       state.requests = [];
       state.frames = [];
-    }
-    if (message.type === "scenario.status")
-      return replay
-        ? {
-            active: true,
-            name: replay.pack.meta.name,
-            httpCount: replay.pack.http.length,
-            wsCount: replay.pack.ws.filter((frame) => frame.direction === "in")
-              .length,
-            consumed: Object.values(replay.consumed).reduce(
-              (sum, n) => sum + n,
-              0,
-            ),
-            scheduledWs: replay.scheduledWs,
-          }
-        : {
-            active: false,
-            name: "",
-            httpCount: 0,
-            wsCount: 0,
-            consumed: 0,
-            scheduledWs: 0,
-          };
-    if (message.type === "scenario.start") {
-      if (state.tabId === null) throw new Error("Start capture before replay");
-      const pack = parseScenarioPack(message.pack);
-      await evaluateWs(
-        state.tabId,
-        "(globalThis.__easySniffScenarioTimers || []).forEach(clearTimeout); globalThis.__easySniffScenarioTimers = []",
-      ).catch(() => {});
-      replay = { pack, consumed: {}, startedAt: Date.now(), scheduledWs: 0 };
-      try {
-        await updateInterception();
-        await chrome.storage.session.set({ scenarioReplay: replay });
-      } catch (error) {
-        replay = null;
-        await updateInterception().catch(() => {});
-        throw error;
-      }
-      return {
-        active: true,
-        name: pack.meta.name,
-        httpCount: pack.http.length,
-        wsCount: pack.ws.filter((frame) => frame.direction === "in").length,
-        consumed: 0,
-        scheduledWs: 0,
-      };
-    }
-    if (message.type === "scenario.stop") {
-      if (state.tabId !== null)
-        await evaluateWs(
-          state.tabId,
-          "(globalThis.__easySniffScenarioTimers || []).forEach(clearTimeout); globalThis.__easySniffScenarioTimers = []",
-        ).catch(() => {});
-      replay = null;
-      await chrome.storage.session.remove("scenarioReplay");
-      await updateInterception();
-      return {
-        active: false,
-        name: "",
-        httpCount: 0,
-        wsCount: 0,
-        consumed: 0,
-        scheduledWs: 0,
-      };
-    }
-    if (message.type === "scenario.playWs") {
-      if (!replay || state.tabId === null)
-        throw new Error("Start scenario replay first");
-      const frames = replay.pack.ws.filter((frame) => frame.direction === "in");
-      for (const frame of frames)
-        if (
-          !state.requests.some(
-            (r) =>
-              r.type === "WebSocket" &&
-              r.wsState === "open" &&
-              r.url === frame.url,
-          )
-        )
-          throw new Error(
-            `Open a WebSocket connection for ${frame.url} before playing frames`,
-          );
-      for (const url of new Set(frames.map((frame) => frame.url))) {
-        const connected = await evaluateWs(
-          state.tabId,
-          `globalThis.__easySniffWs?.connections(${JSON.stringify(url)}) ?? 0`,
-        );
-        if (connected !== 1)
-          throw new Error(
-            `Need exactly one captured page socket for ${url}. Reload the test page after starting capture.`,
-          );
-      }
-      const payload = frames.map(({ url, payload, delayMs }) => ({
-        url,
-        payload,
-        delayMs,
-      }));
-      const expression = `(() => {
-        (globalThis.__easySniffScenarioTimers || []).forEach(clearTimeout);
-        globalThis.__easySniffScenarioTimers = ${JSON.stringify(payload)}.map(item =>
-          setTimeout(() => {
-            try { globalThis.__easySniffWs?.inject(item.url, item.payload); }
-            catch (error) { console.error("Easy Sniff scenario frame:", error); }
-          }, item.delayMs)
-        );
-        return globalThis.__easySniffScenarioTimers.length;
-      })()`;
-      const count = await evaluateWs(state.tabId, expression);
-      replay.scheduledWs = count;
-      await chrome.storage.session.set({ scenarioReplay: replay });
-      return { scheduledWs: count };
     }
     if (message.type === "capture.rules") {
       const rules = message.rules as Rule[];
