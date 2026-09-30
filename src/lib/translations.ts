@@ -580,6 +580,21 @@ Object.assign(english, {
     "Frame truncated to 8,000 characters; it cannot be reused as a complete message.",
   имитация: "synthetic",
   "Запись бага": "Bug replay",
+  "Полные HTTP-данные": "Full HTTP details",
+  "Сохранять заголовки, Cookie/Set-Cookie, токены и тела запросов и ответов. ZIP будет содержать секреты — включайте только для доверенной передачи.":
+    "Save headers, Cookie/Set-Cookie, tokens, and request/response bodies. The ZIP will contain secrets—enable only for trusted sharing.",
+  "Полные HTTP-данные включены": "Full HTTP details enabled",
+  Подробности: "Details",
+  "Копировать cURL": "Copy cURL",
+  "Заголовки запроса": "Request headers",
+  "Cookies запроса": "Request cookies",
+  "Тело запроса": "Request body",
+  "Заголовки ответа": "Response headers",
+  "Заблокированные Set-Cookie": "Blocked Set-Cookie",
+  "Тело ответа": "Response body",
+  "Сетевые детали": "Network details",
+  "Полный отчёт содержит токены, cookies, заголовки и тела. Передавайте ZIP только доверенным разработчикам.":
+    "The full report contains tokens, cookies, headers, and bodies. Share the ZIP only with trusted developers.",
   "Видео вкладки, консоль и сеть — на одной временной шкале.":
     "Tab video, console and network on one timeline.",
   "Только на этом устройстве": "Stored on this device",

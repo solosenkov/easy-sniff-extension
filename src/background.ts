@@ -13,12 +13,21 @@ import { installWsBridge } from "./lib/ws-bridge";
 import {
   redactText,
   redactUrl,
+  getRecordingExchanges,
+  saveExchange,
+  type RecordingBody,
   saveSession,
   type RecordingEvent,
+  type RecordingExchange,
   type RecordingSession,
 } from "./lib/recording";
 let state: CaptureState = initialCapture();
 let recording: RecordingSession | null = null;
+let exchanges = new Map<string, RecordingExchange[]>();
+let pendingRequestExtra = new Map<string, any[]>();
+let pendingResponseExtra = new Map<string, any[]>();
+let detailsWrite = Promise.resolve();
+let remainingBodyCharacters = 25_000_000;
 let lastInvokedTabId: number | null = null;
 let recordingTimer: ReturnType<typeof setTimeout> | undefined;
 let wsScriptId = "";
@@ -35,6 +44,18 @@ const ready = chrome.storage.session.get("capture").then(async (data) => {
   if (saved.wsRules) state.wsRules = saved.wsRules as WsRule[];
   const active = await chrome.storage.session.get("recording");
   if (active.recording) recording = active.recording as RecordingSession;
+  if (recording?.status === "recording" && recording.fullHttp) {
+    const savedExchanges = await getRecordingExchanges(recording.id);
+    recording.networkCount = savedExchanges.length;
+    for (const exchange of savedExchanges) {
+      const list = exchanges.get(exchange.requestId) || [];
+      list.push(exchange);
+      exchanges.set(exchange.requestId, list);
+      remainingBodyCharacters -=
+        (exchange.requestBody?.content.length || 0) +
+        (exchange.responseBody?.content.length || 0);
+    }
+  }
   const invocation = await chrome.storage.session.get("lastInvokedTabId");
   if (typeof invocation.lastInvokedTabId === "number")
     lastInvokedTabId = invocation.lastInvokedTabId;
@@ -185,15 +206,224 @@ function recordingEvent(
         .catch(() => {});
     }, 300);
 }
+function recordBody(content: string, base64 = false): RecordingBody {
+  const limit = Math.max(0, Math.min(1_000_000, remainingBodyCharacters));
+  const body: RecordingBody = {
+    content: content.slice(0, limit),
+    base64,
+    truncated: content.length > limit,
+  };
+  if (!limit && content.length)
+    body.error = "Recording body budget (25 million characters) reached";
+  remainingBodyCharacters -= body.content.length;
+  return body;
+}
+function currentExchange(requestId: string) {
+  return exchanges.get(requestId)?.at(-1);
+}
+function persistExchange(exchange: RecordingExchange) {
+  if (!recording?.fullHttp) return;
+  const sessionId = recording.id;
+  detailsWrite = detailsWrite
+    .then(() => saveExchange(sessionId, structuredClone(exchange)))
+    .catch((error) => {
+      recordingEvent(
+        "system",
+        "warning",
+        "Could not save full request details",
+        String(error),
+      );
+    });
+}
+function applyRequestExtra(exchange: RecordingExchange, p: any) {
+  exchange.requestHeaders = {
+    ...exchange.requestHeaders,
+    ...(p.headers || {}),
+  };
+  exchange.requestHeadersText = p.headersText;
+  exchange.requestCookies = p.associatedCookies || [];
+  exchange.requestExtraSeen = true;
+  persistExchange(exchange);
+}
+function applyResponseExtra(exchange: RecordingExchange, p: any) {
+  exchange.responseHeaders = {
+    ...exchange.responseHeaders,
+    ...(p.headers || {}),
+  };
+  exchange.responseHeadersText = p.headersText;
+  exchange.responseCookies = p.blockedCookies || [];
+  exchange.status = p.statusCode || exchange.status;
+  exchange.responseExtraSeen = true;
+  persistExchange(exchange);
+}
+function captureExchange(
+  tabId: number,
+  method: string,
+  p: any,
+): RecordingExchange | undefined {
+  if (
+    !recording?.fullHttp ||
+    recording.status !== "recording" ||
+    !method.startsWith("Network.")
+  )
+    return;
+  const requestId = String(p.requestId || "");
+  if (!requestId) return;
+  if (method === "Network.requestWillBeSent") {
+    const exchange: RecordingExchange = {
+      id: crypto.randomUUID(),
+      requestId,
+      url: String(p.request.url || ""),
+      method: String(p.request.method || "GET"),
+      resourceType: String(p.type || "Other"),
+      startedAt: Date.now(),
+      requestHeaders: p.request.headers || {},
+    };
+    if (typeof p.request.postData === "string")
+      exchange.requestBody = recordBody(p.request.postData);
+    else if (p.request.hasPostData)
+      exchange.requestBody = {
+        content: "",
+        base64: false,
+        error: "Request body pending or omitted by Chrome",
+      };
+    const list = exchanges.get(requestId) || [];
+    if (p.redirectResponse && list.length) {
+      const prior = list.at(-1)!;
+      prior.status = p.redirectResponse.status;
+      prior.statusText = p.redirectResponse.statusText;
+      prior.responseHeaders = p.redirectResponse.headers || {};
+      prior.duration = Date.now() - prior.startedAt;
+      persistExchange(prior);
+    }
+    list.push(exchange);
+    exchanges.set(requestId, list);
+    recording.networkCount = (recording.networkCount || 0) + 1;
+    const requestExtra = pendingRequestExtra.get(requestId)?.shift();
+    if (requestExtra) applyRequestExtra(exchange, requestExtra);
+    const responseExtra = pendingResponseExtra.get(requestId)?.shift();
+    if (responseExtra) applyResponseExtra(exchange, responseExtra);
+    persistExchange(exchange);
+    return exchange;
+  }
+  const list = exchanges.get(requestId) || [];
+  if (method === "Network.requestWillBeSentExtraInfo") {
+    const target = list.find((e) => !e.requestExtraSeen);
+    if (target) applyRequestExtra(target, p);
+    else
+      pendingRequestExtra.set(requestId, [
+        ...(pendingRequestExtra.get(requestId) || []),
+        p,
+      ]);
+    return target;
+  }
+  if (method === "Network.responseReceivedExtraInfo") {
+    const target = list.find((e) => !e.responseExtraSeen);
+    if (target) applyResponseExtra(target, p);
+    else
+      pendingResponseExtra.set(requestId, [
+        ...(pendingResponseExtra.get(requestId) || []),
+        p,
+      ]);
+    return target;
+  }
+  const exchange = currentExchange(requestId);
+  if (!exchange) return;
+  if (method === "Network.responseReceived") {
+    exchange.status = p.response.status;
+    exchange.statusText = p.response.statusText;
+    exchange.responseHeaders = {
+      ...(p.response.headers || {}),
+      ...exchange.responseHeaders,
+    };
+    exchange.mimeType = p.response.mimeType;
+    exchange.protocol = p.response.protocol;
+    exchange.remoteAddress = [p.response.remoteIPAddress, p.response.remotePort]
+      .filter(Boolean)
+      .join(":");
+    exchange.timing = p.response.timing;
+    exchange.fromDiskCache = !!p.response.fromDiskCache;
+    persistExchange(exchange);
+  } else if (method === "Network.requestServedFromCache") {
+    exchange.fromDiskCache = true;
+    persistExchange(exchange);
+  } else if (method === "Network.loadingFailed") {
+    exchange.error = p.errorText || "Request failed";
+    exchange.duration = Date.now() - exchange.startedAt;
+    persistExchange(exchange);
+  } else if (method === "Network.loadingFinished") {
+    exchange.duration = Date.now() - exchange.startedAt;
+    exchange.encodedDataLength = p.encodedDataLength;
+    const sessionId = recording.id;
+    const bodyTask = (async () => {
+      try {
+        const result = await command(tabId, "Network.getResponseBody", {
+          requestId,
+        });
+        exchange.responseBody = recordBody(
+          result.body || "",
+          !!result.base64Encoded,
+        );
+      } catch (error) {
+        exchange.responseBody = {
+          content: "",
+          base64: false,
+          error: String(error),
+        };
+      }
+      if (exchange.requestBody?.error && !exchange.requestBody.content) {
+        try {
+          exchange.requestBody = recordBody(
+            String(
+              (
+                await command(tabId, "Network.getRequestPostData", {
+                  requestId,
+                })
+              ).postData || "",
+            ),
+          );
+        } catch (error) {
+          exchange.requestBody.error = String(error);
+        }
+      }
+    })();
+    detailsWrite = detailsWrite
+      .then(() => bodyTask)
+      .then(() => saveExchange(sessionId, structuredClone(exchange)))
+      .catch((error) => {
+        recordingEvent(
+          "system",
+          "warning",
+          "Could not read full response",
+          String(error),
+        );
+      });
+  }
+  return exchange;
+}
 function recordDebuggerEvent(method: string, p: any) {
   if (!recording || recording.status !== "recording") return;
+  let exchange: RecordingExchange | undefined;
+  try {
+    exchange =
+      state.tabId !== null
+        ? captureExchange(state.tabId, method, p)
+        : undefined;
+  } catch (error) {
+    recordingEvent(
+      "system",
+      "warning",
+      "Could not capture HTTP details",
+      String(error),
+    );
+  }
   if (method === "Network.requestWillBeSent") {
     recordingEvent(
       "request",
       "normal",
       `${p.request.method} ${redactUrl(p.request.url)}`,
       p.type || "",
-      { requestId: p.requestId },
+      { requestId: p.requestId, exchangeId: exchange?.id },
     );
   } else if (method === "Network.responseReceived") {
     const severity = p.response.status >= 400 ? "error" : "normal";
@@ -202,7 +432,11 @@ function recordDebuggerEvent(method: string, p: any) {
       severity,
       `${p.response.status} ${redactUrl(p.response.url)}`,
       p.type || "",
-      { requestId: p.requestId, status: p.response.status },
+      {
+        requestId: p.requestId,
+        exchangeId: exchange?.id,
+        status: p.response.status,
+      },
     );
   } else if (method === "Network.loadingFailed") {
     recordingEvent(
@@ -213,7 +447,7 @@ function recordDebuggerEvent(method: string, p: any) {
           "Network request failed",
       ),
       p.errorText || "",
-      { requestId: p.requestId },
+      { requestId: p.requestId, exchangeId: exchange?.id },
     );
   } else if (method === "Network.loadingFinished") {
     const row = state.requests.find((r) => r.requestId === p.requestId);
@@ -226,7 +460,7 @@ function recordDebuggerEvent(method: string, p: any) {
         "warning",
         `Slow request · ${duration} ms`,
         redactUrl(row?.url || ""),
-        { requestId: p.requestId, duration },
+        { requestId: p.requestId, exchangeId: exchange?.id, duration },
       );
   } else if (method === "Runtime.consoleAPICalled") {
     const level = String(p.type || "log");
@@ -333,10 +567,18 @@ async function stopRecording() {
 }
 async function finalizeRecording(result: { size: number; mimeType: string }) {
   if (!recording) return;
+  if (recording.fullHttp) await detailsWrite;
   if (state.tabId !== null) {
     await Promise.allSettled([
       command(state.tabId, "Runtime.disable"),
       command(state.tabId, "Log.disable"),
+      recording.fullHttp
+        ? command(state.tabId, "Network.enable", {
+            maxTotalBufferSize: 10 * 1024 * 1024,
+            maxResourceBufferSize: 2 * 1024 * 1024,
+            maxPostDataSize: 24_000,
+          })
+        : Promise.resolve(),
     ]);
   }
   recording.endedAt = Date.now();
@@ -344,6 +586,9 @@ async function finalizeRecording(result: { size: number; mimeType: string }) {
   recording.mimeType = result.mimeType;
   recording.status = "saved";
   await saveSession(recording);
+  exchanges.clear();
+  pendingRequestExtra.clear();
+  pendingResponseExtra.clear();
 }
 async function updateInterception() {
   if (state.tabId === null) return;
@@ -660,6 +905,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (message.type === "recording.eligible") return lastInvokedTabId;
     if (message.type === "recording.start") {
       const tabId = Number(message.tabId);
+      const fullHttp = message.fullHttp === true;
       if (tabId !== lastInvokedTabId)
         throw new Error(
           "Open the test tab and click the Easy Sniff icon before recording it",
@@ -669,6 +915,12 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       if (state.tabId !== tabId)
         throw new Error("Connect the selected tab in Network before recording");
       const tab = await chrome.tabs.get(tabId);
+      if (fullHttp)
+        await command(tabId, "Network.enable", {
+          maxTotalBufferSize: 50 * 1024 * 1024,
+          maxResourceBufferSize: 10 * 1024 * 1024,
+          maxPostDataSize: 1_000_000,
+        });
       await ensureOffscreen();
       const streamId = await chrome.tabCapture.getMediaStreamId({
         targetTabId: tabId,
@@ -680,6 +932,8 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         startedAt: Date.now(),
         status: "recording",
         events: [],
+        fullHttp,
+        networkCount: 0,
       };
       const media = await mediaMessage<{ mimeType: string }>(
         "recording.media.start",
@@ -689,6 +943,11 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         await command(tabId, "Runtime.enable");
         await command(tabId, "Log.enable");
         recording = { ...next, mimeType: media.mimeType };
+        exchanges = new Map();
+        pendingRequestExtra = new Map();
+        pendingResponseExtra = new Map();
+        detailsWrite = Promise.resolve();
+        remainingBodyCharacters = 25_000_000;
         await chrome.storage.session.set({ recording });
         void chrome.runtime
           .sendMessage({ type: "recording.updated", recording })

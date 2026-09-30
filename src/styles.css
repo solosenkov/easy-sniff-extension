@@ -202,6 +202,35 @@ small {
   margin: 8px 0 0;
   font-size: 12px;
 }
+.recording-full-http {
+  display: flex;
+  align-items: start;
+  gap: 11px;
+  padding: 13px 16px;
+  margin-top: 10px;
+  border: 1px solid #4a4234;
+  background: #242019;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.recording-full-http input {
+  margin-top: 3px;
+}
+.recording-full-http strong,
+.recording-full-http small {
+  display: block;
+}
+.recording-full-http small {
+  margin-top: 3px;
+  color: #c0aa86;
+  line-height: 1.5;
+}
+.recording-sensitive {
+  display: inline-block;
+  color: #f1c687;
+  font-size: 11px;
+  margin-bottom: 12px;
+}
 .recording-live,
 .recording-intro {
   margin: 17px 0 25px;
@@ -402,6 +431,82 @@ small {
   padding: 11px 10px;
   border-bottom: 1px solid #2a332c;
 }
+.recording-event-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-bottom: 1px solid #2a332c;
+}
+.recording-event-wrap .recording-event {
+  border-bottom: 0;
+}
+.recording-details-toggle {
+  align-self: center;
+  color: #b7d79f;
+  border: 1px solid #405442;
+  border-radius: 4px;
+  padding: 6px 9px;
+  margin: 0 8px;
+  font-size: 11px;
+}
+.recording-details-toggle[aria-expanded="true"] {
+  background: #2e402f;
+}
+.recording-exchange {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 16px;
+  background: #121913;
+  border-top: 1px solid #354737;
+}
+.recording-exchange-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+.recording-exchange-title strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font:
+    11px/1.6 "IBM Plex Mono",
+    monospace;
+}
+.recording-exchange-meta {
+  color: #a6b3a4;
+  margin: 8px 0 16px;
+  font:
+    11px "IBM Plex Mono",
+    monospace;
+  overflow-wrap: anywhere;
+}
+.recording-exchange-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.recording-exchange-grid section {
+  min-width: 0;
+}
+.recording-exchange-grid h3 {
+  color: #b8d59c;
+  font-size: 11px;
+  margin: 13px 0 6px;
+}
+.recording-exchange-grid pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 11px;
+  border: 1px solid #2b3b2d;
+  border-radius: 4px;
+  background: #171f18;
+  font:
+    11px/1.55 "IBM Plex Mono",
+    monospace;
+  user-select: text;
+}
 .recording-event:hover {
   background: #222a24;
 }
@@ -473,6 +578,9 @@ small {
   }
   .recording-review-head {
     flex-wrap: wrap;
+  }
+  .recording-exchange-grid {
+    grid-template-columns: 1fr;
   }
 }
 .danger-text {

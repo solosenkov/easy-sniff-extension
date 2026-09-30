@@ -4,7 +4,7 @@ A local QA workspace for Chrome and Chromium browsers. Capture traffic, inspect 
 
 ## Install without Node.js
 
-1. Download **`easy-sniff-v3.6.0.zip`** from the [v3.6.0 pre-release](https://github.com/solosenkov/easy-sniff-extension/releases/tag/v3.6.0).
+1. Download **`easy-sniff-v3.7.0.zip`** from the [v3.7.0 pre-release](https://github.com/solosenkov/easy-sniff-extension/releases/tag/v3.7.0).
 2. Unzip it into a permanent folder. `manifest.json` must be directly inside that folder.
 3. Open `chrome://extensions` (or your Chromium browser's extensions page) and enable **Developer mode**.
 4. Click **Load unpacked**, select the unzipped folder, then click the Easy Sniff icon.
@@ -36,7 +36,9 @@ Chrome displays a debugger notice while capture is active. Opening DevTools may 
 
 Open the page to record and click the Easy Sniff extension icon on that tab. In the tool window, open **Bug Replay**, confirm the tab, and click **Start recording**. Chrome grants tab capture to the tab where you invoked the extension. Reproduce the bug and click **Bug appeared** to mark the moment; then click **Stop**. The recording has a five-minute limit and also stops when the tab closes. Select the saved session to review its video and timeline. Red markers indicate console errors, uncaught exceptions, failed requests, and HTTP 4xx/5xx responses. Click a marker or event to jump to that point. **Download ZIP** produces an offline report for a developer: unzip it, then open `report.html` beside `video.webm`.
 
-Recordings stay in this browser's IndexedDB until deleted. The export omits request/response bodies and headers. It strips common secret query parameters from URLs and common keys from console text, but the video itself may show sensitive data. Review it before sharing. Opening DevTools on the recorded tab can disconnect Easy Sniff's debugger; video may continue briefly, but technical events stop and the recording is finalized. Bug Replay documents what happened; it does not replay user actions or network traffic.
+Before starting, enable **Full HTTP details** if the report should include request/response headers, Cookie and Set-Cookie values, Authorization tokens, available request/response bodies, timing, and a copyable cURL command for each request. This mode is off by default. Click **Details** on a network event in Easy Sniff or in the exported HTML report. Request URLs remain redacted in the timeline, while full raw values are available in the opt-in details. Bodies are capped at 1 million characters each and 25 million characters per recording; Chrome may omit some bodies (for example, redirects, file uploads, or expired response buffers). The detail panel shows an omission or truncation reason. A cURL command with a truncated or binary request body is labelled for review and may not be runnable as-is.
+
+Recordings stay in this browser's IndexedDB until deleted. Without Full HTTP details, the export omits request/response bodies and headers. It strips common secret query parameters from summary URLs and common keys from console text, but the video itself may show sensitive data. With Full HTTP details enabled, the ZIP intentionally contains unredacted credentials and cookies; share it only through trusted channels. Review it before sharing. Opening DevTools on the recorded tab can disconnect Easy Sniff's debugger; video may continue briefly, but technical events stop and the recording is finalized. Bug Replay documents what happened; it does not replay user actions or network traffic.
 
 ## AI assistant (beta)
 

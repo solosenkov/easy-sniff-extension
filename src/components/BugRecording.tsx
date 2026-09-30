@@ -11,14 +11,17 @@ import {
 import { t, currentLocale } from "../lib/i18n";
 import {
   type RecordingEvent,
+  type RecordingExchange,
   type RecordingSession,
+  curlFromExchange,
   deleteRecording,
   getRecording,
+  getRecordingExchanges,
   listRecordings,
 } from "../lib/recording";
 import { reportHtml, zipFiles } from "../lib/recording-export";
 import { isExtension, rpc } from "../lib/storage";
-import { Button, ErrorNote } from "./Primitives";
+import { Button, CopyButton, ErrorNote } from "./Primitives";
 import type { CaptureState } from "../lib/types";
 
 type BrowserTab = { id: number; title: string; url: string };
@@ -38,6 +41,68 @@ function kindLabel(kind: RecordingEvent["kind"]) {
     system: "System",
   }[kind];
 }
+function ExchangeDetails({ exchange }: { exchange: RecordingExchange }) {
+  const bodyText = (body?: RecordingExchange["requestBody"]) =>
+    body
+      ? `${body.base64 ? "[base64] " : ""}${body.content || body.error || "—"}${body.truncated ? "\n[truncated]" : ""}`
+      : "—";
+  return (
+    <div className="recording-exchange">
+      <div className="recording-exchange-title">
+        <strong>
+          {exchange.method} {exchange.url}
+        </strong>
+        <CopyButton
+          value={curlFromExchange(exchange)}
+          label={t("Копировать cURL")}
+        />
+      </div>
+      <div className="recording-exchange-meta">
+        {exchange.status ?? "—"} · {exchange.resourceType} ·{" "}
+        {exchange.duration ?? "—"} ms · {exchange.protocol || "—"} ·{" "}
+        {exchange.mimeType || "—"} · {exchange.remoteAddress || "—"}
+      </div>
+      <div className="recording-exchange-grid">
+        <section>
+          <h3>{t("Заголовки запроса")}</h3>
+          <pre>
+            {exchange.requestHeadersText ||
+              JSON.stringify(exchange.requestHeaders, null, 2)}
+          </pre>
+          <h3>{t("Cookies запроса")}</h3>
+          <pre>{JSON.stringify(exchange.requestCookies || [], null, 2)}</pre>
+          <h3>{t("Тело запроса")}</h3>
+          <pre>{bodyText(exchange.requestBody)}</pre>
+        </section>
+        <section>
+          <h3>{t("Заголовки ответа")}</h3>
+          <pre>
+            {exchange.responseHeadersText ||
+              JSON.stringify(exchange.responseHeaders || {}, null, 2)}
+          </pre>
+          <h3>{t("Заблокированные Set-Cookie")}</h3>
+          <pre>{JSON.stringify(exchange.responseCookies || [], null, 2)}</pre>
+          <h3>{t("Тело ответа")}</h3>
+          <pre>{bodyText(exchange.responseBody)}</pre>
+          <h3>{t("Сетевые детали")}</h3>
+          <pre>
+            {JSON.stringify(
+              {
+                statusText: exchange.statusText,
+                fromDiskCache: exchange.fromDiskCache,
+                encodedDataLength: exchange.encodedDataLength,
+                timing: exchange.timing,
+                error: exchange.error,
+              },
+              null,
+              2,
+            )}
+          </pre>
+        </section>
+      </div>
+    </div>
+  );
+}
 export function BugRecording({
   capture,
   onCapture,
@@ -52,6 +117,9 @@ export function BugRecording({
   const [saved, setSaved] = useState<RecordingSession[]>([]);
   const [selected, setSelected] = useState<RecordingSession | null>(null);
   const [videoUrl, setVideoUrl] = useState("");
+  const [network, setNetwork] = useState<RecordingExchange[]>([]);
+  const [expandedEventId, setExpandedEventId] = useState("");
+  const [fullHttp, setFullHttp] = useState(false);
   const [filter, setFilter] = useState<
     "all" | "errors" | "network" | "console" | "markers"
   >("all");
@@ -116,6 +184,11 @@ export function BugRecording({
     }
     let url = "";
     let cancelled = false;
+    setNetwork([]);
+    setExpandedEventId("");
+    void getRecordingExchanges(selected.id).then((rows) => {
+      if (!cancelled) setNetwork(rows);
+    });
     void getRecording(selected.id).then((record) => {
       if (record) {
         url = URL.createObjectURL(record.video);
@@ -135,7 +208,10 @@ export function BugRecording({
     try {
       if (capture.tabId !== tabId)
         onCapture(await rpc<CaptureState>("capture.start", { tabId }));
-      const session = await rpc<RecordingSession>("recording.start", { tabId });
+      const session = await rpc<RecordingSession>("recording.start", {
+        tabId,
+        fullHttp,
+      });
       setSelected(null);
       setActive(session);
     } catch (e) {
@@ -177,9 +253,13 @@ export function BugRecording({
     try {
       const record = await getRecording(session.id);
       if (!record) throw new Error("Recording data is missing");
+      const network = (await getRecordingExchanges(session.id)).map(
+        (exchange) => ({ ...exchange, curl: curlFromExchange(exchange) }),
+      );
+      const report = { ...record.session, network };
       const zip = await zipFiles([
-        { name: "report.html", data: reportHtml(record.session) },
-        { name: "session.json", data: JSON.stringify(record.session, null, 2) },
+        { name: "report.html", data: reportHtml(report) },
+        { name: "session.json", data: JSON.stringify(report, null, 2) },
         { name: "video.webm", data: record.video },
       ]);
       const url = URL.createObjectURL(zip);
@@ -223,6 +303,9 @@ export function BugRecording({
   const errorCount =
     (active || selected)?.events.filter((e) => e.severity === "error").length ||
     0;
+  const networkById = new Map(
+    network.map((exchange) => [exchange.id, exchange]),
+  );
   return (
     <div className="recording-page">
       <div className="recording-heading">
@@ -275,6 +358,23 @@ export function BugRecording({
           </Button>
         )}
       </div>
+      {!active && (
+        <label className="recording-full-http">
+          <input
+            type="checkbox"
+            checked={fullHttp}
+            onChange={(event) => setFullHttp(event.target.checked)}
+          />
+          <span>
+            <strong>{t("Полные HTTP-данные")}</strong>
+            <small>
+              {t(
+                "Сохранять заголовки, Cookie/Set-Cookie, токены и тела запросов и ответов. ZIP будет содержать секреты — включайте только для доверенной передачи.",
+              )}
+            </small>
+          </span>
+        </label>
+      )}
       {!active && tabId !== eligibleTabId && (
         <p className="recording-guidance">
           {t(
@@ -295,6 +395,11 @@ export function BugRecording({
             </span>
           </div>
           <p>{active.title}</p>
+          {active.fullHttp && (
+            <span className="recording-sensitive">
+              {t("Полные HTTP-данные включены")}
+            </span>
+          )}
           <Button icon={Flag} onClick={() => void marker()} disabled={busy}>
             {t("Баг проявился")}
           </Button>
@@ -336,6 +441,7 @@ export function BugRecording({
                     (session.endedAt || session.startedAt) - session.startedAt,
                   )}{" "}
                   · {session.events.length} {t("событий")}
+                  {session.fullHttp && <> · {session.networkCount || 0} HTTP</>}
                 </small>
               </button>
             ))
@@ -355,6 +461,9 @@ export function BugRecording({
                       currentLocale(),
                     )}{" "}
                     · {selected.events.length} {t("событий")}
+                    {selected.fullHttp && (
+                      <> · {selected.networkCount || 0} HTTP</>
+                    )}
                   </small>
                 </div>
                 <div>
@@ -453,31 +562,57 @@ export function BugRecording({
                 ))}
               </div>
               <div className="recording-events">
-                {events.map((event) => (
-                  <button
-                    key={event.id}
-                    className={`recording-event ${event.severity}`}
-                    onClick={() => {
-                      if (video.current) {
-                        video.current.currentTime = event.at / 1000;
-                        void video.current.play();
-                      }
-                    }}
-                  >
-                    <span>{time(event.at)}</span>
-                    <em>{kindLabel(event.kind)}</em>
-                    <strong>{event.title}</strong>
-                    {event.detail && <small>{event.detail}</small>}
-                  </button>
-                ))}
+                {events.map((event) => {
+                  const exchange = event.exchangeId
+                    ? networkById.get(event.exchangeId)
+                    : undefined;
+                  return (
+                    <div key={event.id} className="recording-event-wrap">
+                      <button
+                        className={`recording-event ${event.severity}`}
+                        onClick={() => {
+                          if (video.current) {
+                            video.current.currentTime = event.at / 1000;
+                            void video.current.play();
+                          }
+                        }}
+                      >
+                        <span>{time(event.at)}</span>
+                        <em>{kindLabel(event.kind)}</em>
+                        <strong>{event.title}</strong>
+                        {event.detail && <small>{event.detail}</small>}
+                      </button>
+                      {exchange && (
+                        <button
+                          className="recording-details-toggle"
+                          aria-expanded={expandedEventId === event.id}
+                          onClick={() =>
+                            setExpandedEventId((id) =>
+                              id === event.id ? "" : event.id,
+                            )
+                          }
+                        >
+                          {t("Подробности")}
+                        </button>
+                      )}
+                      {exchange && expandedEventId === event.id && (
+                        <ExchangeDetails exchange={exchange} />
+                      )}
+                    </div>
+                  );
+                })}
                 {events.length === 0 && (
                   <p>{t("Для этого фильтра событий нет.")}</p>
                 )}
               </div>
               <p className="recording-privacy">
-                {t(
-                  "Отчёт включает видео и URL запросов. Секретные query-параметры скрываются автоматически, но проверьте экран перед отправкой.",
-                )}
+                {selected.fullHttp
+                  ? t(
+                      "Полный отчёт содержит токены, cookies, заголовки и тела. Передавайте ZIP только доверенным разработчикам.",
+                    )
+                  : t(
+                      "Отчёт включает видео и URL запросов. Секретные query-параметры скрываются автоматически, но проверьте экран перед отправкой.",
+                    )}
               </p>
             </>
           ) : (
