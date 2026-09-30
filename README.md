@@ -4,7 +4,7 @@ A local QA workspace for Chrome and Chromium browsers. Capture traffic, inspect 
 
 ## Install without Node.js
 
-1. Download **`easy-sniff-v3.5.0.zip`** from [GitHub Releases](https://github.com/solosenkov/easy-sniff-extension/releases/tag/v3.5.0).
+1. Download **`easy-sniff-v3.6.0.zip`** from the [v3.6.0 pre-release](https://github.com/solosenkov/easy-sniff-extension/releases/tag/v3.6.0).
 2. Unzip it into a permanent folder. `manifest.json` must be directly inside that folder.
 3. Open `chrome://extensions` (or your Chromium browser's extensions page) and enable **Developer mode**.
 4. Click **Load unpacked**, select the unzipped folder, then click the Easy Sniff icon.
@@ -27,7 +27,7 @@ Then load the `dist` folder via **Load unpacked**. `npm run dev` serves a browse
 - WebSocket view showing captured connections, status, URL topics, message counts, and incoming/outgoing frames. Its scenario panel can send text through the page's socket, inject a synthetic incoming message into the app, and save rules that replace future incoming text messages. Start capture before the connection opens and reload the test tab. Worker sockets and already-open sockets are not controllable. URL topics are shown when present; hidden subscriptions require reading captured frames.
 - Response mocks (including HTTP 500), request changes, header changes, blocking, and delay. Select a request in Network and click **Modify** to prepare a rule from it. Rules affect future traffic on the connected tab only. A mock returns a synthetic response before the request reaches the server.
 - JSON, JWT, Base64, URL, and WebSocket payload decoding.
-- Bug Replay records one tab as WebM alongside a synchronized timeline of console messages, HTTP requests and responses, WebSocket metadata, errors, and QA markers. Review it locally, then export a ZIP with `report.html`, `video.webm`, and `session.json`. This feature is available in the v3.6.0 source build; the linked v3.5.0 release predates it.
+- Bug Replay records one tab as WebM alongside a synchronized timeline of console messages, HTTP requests and responses, WebSocket metadata, errors, and QA markers. Review it locally, then export a ZIP with `report.html`, `video.webm`, and `session.json`.
 - English interface by default, with a persistent **RU** language switch in the top bar.
 
 Chrome displays a debugger notice while capture is active. Opening DevTools may disconnect the capture. Stopping capture also stops applying overrides to the page. The journal stores up to 300 requests and 300 WebSocket messages within a size budget; large or binary bodies may be truncated or unavailable. Starting capture on another tab resets the journal.
