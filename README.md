@@ -4,7 +4,7 @@
 
 Easy Sniff is a free, local QA workspace for Chrome: capture requests, simulate failures, test WebSocket events, and hand a developer the evidence in one ZIP. It opens in a separate window and works with your own AI provider.
 
-[Download 3.7.0](https://github.com/solosenkov/easy-sniff-extension/releases/latest) · [Changelog](CHANGELOG.md) · [Report a bug](https://github.com/solosenkov/easy-sniff-extension/issues/new/choose) · [MIT license](LICENSE)
+[**Install from the Chrome Web Store**](https://chromewebstore.google.com/detail/easy-sniff-3/gibnlgpllnidmjagfciohcebhbgcnajn) · [Download ZIP 3.7.0](https://github.com/solosenkov/easy-sniff-extension/releases/latest) · [Changelog](CHANGELOG.md) · [Report a bug](https://github.com/solosenkov/easy-sniff-extension/issues/new/choose) · [MIT license](LICENSE)
 
 - **Bug Replay:** tab video with a synchronized timeline of HTTP, console, WebSocket metadata, and error markers. Export an offline HTML report.
 - **Traffic overrides:** return 500, change JSON, delay or block requests, and modify request headers or payloads.
